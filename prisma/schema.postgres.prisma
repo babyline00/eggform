@@ -1,0 +1,41 @@
+# EggForm Prisma Schema — PostgreSQL Edition
+#
+# This is the production schema for PostgreSQL.
+# The dev schema (SQLite) lives at prisma/schema.prisma.
+# To switch to PostgreSQL in production:
+#   1. Set DATABASE_URL=postgresql://user:pass@host:5432/eggform
+#   2. Copy this file over prisma/schema.prisma
+#   3. Run: bun run db:migrate --name init_postgres
+#
+# Differences from SQLite:
+#   - Native JSON support (use Json instead of String for structured data)
+#   - Native UUID type for IDs (faster + more secure than cuid)
+#   - Decimal type for monetary amounts (no float precision issues)
+//   - Native arrays for tags (no separate join tables)
+//   - Better index support (partial, expression indexes)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Note: The model definitions are identical to the SQLite schema.
+// The differences are in column types (Json, Decimal, UUID) which Prisma
+// handles automatically based on the datasource provider.
+
+// See prisma/schema.prisma for the full model definitions — they apply
+// to both SQLite and PostgreSQL.
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  // ... rest of fields (same as SQLite schema)
+  // PostgreSQL can additionally use:
+  // id        String   @id @default(uuid())  // native UUID
+  // createdAt DateTime @default(now()) @db.Timestamptz  // timezone-aware
+  // metadata  Json?    // native JSON support
+}

@@ -1,0 +1,57 @@
+{
+  "name": "EggForm — Virtual Egg Farming & PKR Wallet",
+  "short_name": "EggForm",
+  "description": "Build your virtual farm, hatch eggs, collect animals, trade on the marketplace, and manage a separate PKR wallet.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F9FC",
+  "theme_color": "#18A957",
+  "orientation": "portrait-primary",
+  "categories": ["games", "finance", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "Open your farm dashboard",
+      "url": "/?section=dashboard",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "PKR Wallet",
+      "short_name": "Wallet",
+      "description": "View your PKR balance and transactions",
+      "url": "/?section=pkr-wallet",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Marketplace",
+      "short_name": "Market",
+      "description": "Buy and sell eggs and animals",
+      "url": "/?section=marketplace",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "type": "image/png",
+      "sizes": "390x844",
+      "form_factor": "narrow",
+      "label": "Mobile dashboard"
+    }
+  ]
+}

@@ -1,0 +1,701 @@
+// EggForm — Full Production Prisma Schema
+// Implements the dual-wallet, ledger-first architecture from §19, §21, §24, §63
+// SQLite for MVP; switch provider to PostgreSQL for production (see §79)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// AUTH & USERS
+// ============================================================
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  phone           String   @unique
+  username        String   @unique
+  fullName        String
+  country         String   @default("PK")
+  dob             DateTime?
+  passwordHash    String?
+  status          String   @default("active") // active | suspended | banned
+  role            String   @default("user")   // user | moderator | finance_admin | content_admin | super_admin
+  referralCode    String   @unique @default(cuid())
+  referredById    String?
+  referredBy      User?    @relation("Referrals", fields: [referredById], references: [id])
+  referrals       User[]   @relation("Referrals")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastLoginAt     DateTime?
+
+  profile         UserProfile?
+  farm            Farm?
+  gameWallet      GameWallet?
+  pkrWallet       PkrWallet?
+  eggs            Egg[]
+  animals         Animal[]
+  inventoryItems  InventoryItem[]
+  missions        UserMission[]
+  achievements    UserAchievement[]
+  events          EventParticipation[]
+  listings        MarketplaceListing[]      @relation("SellerListings")
+  orders          MarketplaceOrder[]       @relation("BuyerOrders")
+  sellerOrders    MarketplaceOrder[]       @relation("SellerOrders")
+  deposits        Deposit[]
+  withdrawals     Withdrawal[]
+  transactions    PkrTransaction[]
+  notifications   Notification[]
+  supportTickets  SupportTicket[]          @relation("TicketAuthor")
+  ticketReplies   SupportMessage[]
+  devices         Device[]
+  auditLogs       AuditLog[]               @relation("UserAuditLogs")
+  kyc             KycProfile?
+  otpCodes        OtpCode[]
+  sessions        Session[]
+}
+
+model UserProfile {
+  userId          String   @id
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarUrl       String?
+  bio             String?
+  farmName       String?
+  level           Int      @default(1)
+  xp              Int      @default(0)
+  energy          Int      @default(100)
+  maxEnergy       Int      @default(100)
+  preferredTheme  String   @default("light")
+  transactionPin  String?  // hashed
+  twoFactorSecret String?
+  twoFactorEnabled Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  ip           String?
+  userAgent    String?
+  deviceFp     String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  revokedAt    DateTime?
+}
+
+model OtpCode {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone       String
+  code        String
+  purpose     String   // register | login | withdraw | reset
+  attempts    Int      @default(0)
+  consumed     Boolean  @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([phone, purpose])
+}
+
+model Device {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceFp     String
+  label        String?
+  ip           String?
+  userAgent    String?
+  lastSeenAt   DateTime @default(now())
+  trusted      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+// ============================================================
+// FARM
+// ============================================================
+
+model Farm {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  level        Int      @default(1)
+  xp           Int      @default(0)
+  capacity     Int      @default(20)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  buildings    FarmBuilding[]
+  eggs         Egg[]
+  animals      Animal[]
+  incubators   Incubator[]
+}
+
+model FarmBuilding {
+  id           String   @id @default(cuid())
+  farmId       String
+  farm         Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  type         String   // coop | incubator | feed_factory | storage | warehouse | lab | training | event | upgrade
+  level        Int      @default(1)
+  positionX    Float?
+  positionY    Float?
+  createdAt    DateTime @default(now())
+}
+
+// ============================================================
+// EGGS & INCUBATORS
+// ============================================================
+
+model EggType {
+  id                String   @id @default(cuid())
+  slug              String   @unique // basic | silver | golden | diamond | legendary
+  name              String
+  rarity            String   // common | uncommon | rare | epic | legendary
+  formationDuration Int      // seconds
+  requiredLevel     Int      @default(1)
+  requiredIncubator String
+  virtualValue      Int      @default(0)
+  marketplaceAllowed Boolean @default(true)
+  image             String?
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+
+  eggs              Egg[]
+  hatchConfig       EggHatchConfig?
+}
+
+model EggHatchConfig {
+  eggTypeId         String   @id
+  eggType           EggType  @relation(fields: [eggTypeId], references: [id], onDelete: Cascade)
+  animalTypeSlug    String
+  probability       Float    @default(1.0)
+  bonusChance       Float?
+}
+
+model Egg {
+  id              String   @id @default(cuid())
+  eggTypeId       String
+  eggType         EggType  @relation(fields: [eggTypeId], references: [id])
+  ownerId         String
+  owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  farmId          String?
+  farm            Farm?    @relation(fields: [farmId], references: [id])
+  incubatorId     String?
+  incubator       Incubator? @relation(fields: [incubatorId], references: [id])
+  status          String   @default("owned") // owned | incubating | hatched | sold
+  formationStartedAt DateTime?
+  formationEndsAt DateTime?
+  careHealth      Int      @default(100)
+  careTemperature Int      @default(95)
+  careMoisture    Int      @default(85)
+  createdAt       DateTime @default(now())
+  hatchedAt       DateTime?
+  hatchedAnimalId String?  @unique
+  hatchedAnimal   Animal?  @relation("HatchedFrom")
+}
+
+model Incubator {
+  id           String   @id @default(cuid())
+  farmId       String
+  farm         Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  type         String   // basic | advanced | premium | legendary
+  capacity     Int      @default(1)
+  speedMultiplier Float @default(1.0)
+  level        Int      @default(1)
+  eggs         Egg[]
+  createdAt    DateTime @default(now())
+}
+
+// ============================================================
+// ANIMALS & PRODUCTION
+// ============================================================
+
+model AnimalType {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  species        String
+  rarity         String
+  baseHealth     Int      @default(100)
+  baseEnergy     Int      @default(100)
+  baseProduction Int      @default(10)
+  productionType String   // coins | gems | eggs | special
+  maxLevel       Int      @default(10)
+  image          String?
+  createdAt      DateTime @default(now())
+
+  animals        Animal[]
+}
+
+model Animal {
+  id            String   @id @default(cuid())
+  animalTypeId  String
+  animalType    AnimalType @relation(fields: [animalTypeId], references: [id])
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  farmId        String?
+  farm          Farm?    @relation(fields: [farmId], references: [id])
+  name          String?
+  level         Int      @default(1)
+  xp            Int      @default(0)
+  health        Int      @default(100)
+  energy        Int      @default(100)
+  happiness     Int      @default(80)
+  productionRate Int     @default(10)
+  upgradeLevel  Int      @default(0)
+  status        String   @default("active")
+  producedFromEggId String?  @unique
+  hatchedFrom   Egg?     @relation("HatchedFrom", fields: [producedFromEggId], references: [id])
+  createdAt     DateTime @default(now())
+  lastCollectedAt DateTime?
+}
+
+// ============================================================
+// INVENTORY
+// ============================================================
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // egg | animal | feed | water | energy | booster | building | decoration | resource
+  refId        String?
+  name         String
+  quantity     Int      @default(1)
+  rarity       String?
+  metadata     String?  // JSON string
+  createdAt    DateTime @default(now())
+
+  @@index([userId, type])
+}
+
+// ============================================================
+// MISSIONS & ACHIEVEMENTS
+// ============================================================
+
+model Mission {
+  id           String   @id @default(cuid())
+  name         String
+  description  String
+  type         String   // daily | weekly | one_time | event
+  requirement  String   // JSON: { action: "hatch", count: 3 }
+  rewardCoins  Int      @default(0)
+  rewardGems   Int      @default(0)
+  rewardXp     Int      @default(0)
+  startDate    DateTime?
+  endDate      DateTime?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  userMissions UserMission[]
+}
+
+model UserMission {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  missionId    String
+  mission      Mission  @relation(fields: [missionId], references: [id])
+  progress     Int      @default(0)
+  target       Int      @default(1)
+  status       String   @default("active") // active | completed | claimed | expired
+  completedAt  DateTime?
+  claimedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, missionId])
+}
+
+model Achievement {
+  id           String   @id @default(cuid())
+  name         String
+  description  String
+  icon         String?
+  tier         String   @default("bronze") // bronze | silver | gold | platinum
+  requirement  String
+  createdAt    DateTime @default(now())
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId  String
+  achievement    Achievement @relation(fields: [achievementId], references: [id])
+  unlockedAt     DateTime @default(now())
+
+  @@unique([userId, achievementId])
+}
+
+// ============================================================
+// EVENTS
+// ============================================================
+
+model Event {
+  id           String   @id @default(cuid())
+  name         String
+  description  String
+  banner       String?
+  startDate    DateTime
+  endDate      DateTime
+  rewards      String?  // JSON
+  status       String   @default("scheduled") // scheduled | active | ended | cancelled
+  createdAt    DateTime @default(now())
+
+  participants EventParticipation[]
+}
+
+model EventParticipation {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id])
+  score        Int      @default(0)
+  joinedAt     DateTime @default(now())
+
+  @@unique([userId, eventId])
+}
+
+// ============================================================
+// MARKETPLACE
+// ============================================================
+
+model MarketplaceListing {
+  id           String   @id @default(cuid())
+  sellerId     String
+  seller       User     @relation("SellerListings", fields: [sellerId], references: [id], onDelete: Cascade)
+  assetType    String   // egg | animal | resource
+  assetId      String
+  name         String
+  rarity       String?
+  price        Int      // in coins
+  feePercent   Float    @default(0.05)
+  status       String   @default("active") // active | sold | cancelled | expired
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  orders       MarketplaceOrder[] @relation("ListingOrders")
+}
+
+model MarketplaceOrder {
+  id           String   @id @default(cuid())
+  listingId    String
+  listing      MarketplaceListing @relation("ListingOrders", fields: [listingId], references: [id])
+  buyerId      String
+  buyer        User     @relation("BuyerOrders", fields: [buyerId], references: [id])
+  sellerId     String
+  seller       User     @relation("SellerOrders", fields: [sellerId], references: [id])
+  price        Int
+  fee          Int
+  netToSeller  Int
+  status       String   @default("completed") // pending | completed | failed | refunded
+  createdAt    DateTime @default(now())
+}
+
+// ============================================================
+// GAME WALLET (virtual coins / gems / tickets)
+// ============================================================
+
+model GameWallet {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coins        Int      @default(0)
+  gems         Int      @default(0)
+  tickets      Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  transactions GameWalletTransaction[]
+}
+
+model GameWalletTransaction {
+  id           String   @id @default(cuid())
+  walletId     String
+  wallet       GameWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type         String   // earn | spend | reward | refund | admin_adjust
+  amount       Int      // signed
+  balanceBefore Int
+  balanceAfter  Int
+  reference    String?
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  @@index([walletId, createdAt])
+}
+
+// ============================================================
+// PKR WALLET (real-money ledger — see §20-24)
+// ============================================================
+
+model PkrWallet {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  available    Int      @default(0)  // in paisa (1 PKR = 100 paisa)
+  pending      Int      @default(0)
+  locked       Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  transactions PkrTransaction[]
+  deposits     Deposit[]
+  withdrawals  Withdrawal[]
+}
+
+model PkrTransaction {
+  id                  String   @id @default(cuid())
+  walletId            String
+  wallet              PkrWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  type                String   // deposit | withdrawal | purchase | refund | marketplace_payment | marketplace_settlement | fee | adjustment | chargeback | reversal | bonus
+  amount              Int      // signed, paisa
+  balanceBefore       Int
+  balanceAfter        Int
+  reference           String?
+  paymentProvider     String?
+  providerTransactionId String?
+  status              String   @default("completed") // pending | processing | completed | failed | cancelled | expired | refunded | reversed
+  ip                  String?
+  deviceFp            String?
+  adminId             String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  completedAt         DateTime?
+
+  @@index([walletId, createdAt])
+  @@index([userId, type])
+}
+
+model Deposit {
+  id                  String   @id @default(cuid())
+  walletId            String
+  wallet              PkrWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  amount              Int      // paisa
+  currency            String   @default("PKR")
+  paymentMethod       String   // bank | card | wallet | easypaisa | jazzcash
+  gatewayReference    String?
+  internalReference   String   @unique
+  providerTransactionId String?
+  status              String   @default("pending") // pending | processing | completed | failed | cancelled | expired | refunded
+  ip                  String?
+  deviceFp            String?
+  webhookVerifiedAt   DateTime?
+  createdAt           DateTime @default(now())
+  completedAt         DateTime?
+}
+
+model Withdrawal {
+  id                  String   @id @default(cuid())
+  walletId            String
+  wallet              PkrWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  amount              Int      // paisa
+  fee                 Int      @default(0)
+  netAmount           Int
+  method              String   // bank | wallet | card
+  methodReference     String?  // masked account
+  kycRequired         Boolean  @default(true)
+  riskScore           Int      @default(0)
+  status              String   @default("pending") // pending | under_review | approved | processing | completed | rejected | failed | cancelled | reversed
+  reviewerId          String?
+  reviewNotes         String?
+  createdAt           DateTime @default(now())
+  processedAt         DateTime?
+}
+
+model PaymentWebhook {
+  id                  String   @id @default(cuid())
+  provider            String
+  providerEventId     String?
+  signature           String?
+  payload             String   // raw JSON
+  matchedTransactionId String?
+  status              String   @default("received") // received | verified | failed | duplicate
+  createdAt           DateTime @default(now())
+  processedAt         DateTime?
+}
+
+// ============================================================
+// KYC
+// ============================================================
+
+model KycProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       String   @default("not_started") // not_started | pending | under_review | verified | rejected | expired
+  cnicNumber   String?
+  cnicFrontUrl String?
+  cnicBackUrl  String?
+  selfieUrl    String?
+  address      String?
+  city         String?
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+  reviewerId   String?
+  rejectionReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviews      KycReview[]
+}
+
+model KycReview {
+  id           String   @id @default(cuid())
+  kycId        String
+  kyc          KycProfile @relation(fields: [kycId], references: [id])
+  reviewerId   String
+  action       String   // approve | reject | request_info
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// ============================================================
+// NOTIFICATIONS & SUPPORT
+// ============================================================
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // egg_ready | production_ready | payment_received | withdrawal_update | mission_complete | event_started | security_alert | login_alert
+  title        String
+  message      String
+  readAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, readAt])
+}
+
+model SupportTicket {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation("TicketAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  category     String   // wallet | payment | game | account | marketplace | other
+  subject      String
+  status       String   @default("open") // open | pending | in_progress | resolved | closed
+  priority     String   @default("normal") // low | normal | high | urgent
+  assigneeId   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  messages     SupportMessage[]
+}
+
+model SupportMessage {
+  id           String   @id @default(cuid())
+  ticketId     String
+  ticket       SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  isAdmin      Boolean  @default(false)
+  message      String
+  attachments  String?  // JSON
+  createdAt    DateTime @default(now())
+}
+
+// ============================================================
+// ADMIN, ROLES, AUDIT
+// ============================================================
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  role          String   @default("moderator")
+  permissions   String   // JSON array
+  lastActiveAt DateTime?
+  createdAt    DateTime @default(now())
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  adminId      String?
+  user         User?    @relation("UserAuditLogs", fields: [adminId], references: [id])
+  action       String
+  targetType   String
+  targetId     String?
+  beforeValue  String?
+  afterValue   String?
+  ip           String?
+  deviceFp     String?
+  reason       String?
+  requestId    String?
+  createdAt    DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([action])
+}
+
+model SecurityEvent {
+  id           String   @id @default(cuid())
+  userId       String?
+  type         String   // failed_login | otp_abuse | multiple_accounts | suspicious_deposit | referral_abuse | bot_activity
+  severity     String   @default("low") // low | medium | high | critical
+  ip           String?
+  deviceFp     String?
+  metadata     String?  // JSON
+  resolvedAt   DateTime?
+  createdAt    DateTime @default(now())
+}
+
+model SystemSetting {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  value        String
+  type         String   @default("string") // string | int | bool | json
+  category     String   // general | wallet | game | notifications | security
+  updatedAt    DateTime @updatedAt
+}
+
+model PromoCode {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  type         String   // fixed | percentage | bonus | item
+  value        Int
+  usageLimit   Int      @default(0)
+  usedCount    Int      @default(0)
+  perUser      Int      @default(1)
+  startDate    DateTime
+  endDate      DateTime?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+
+  redemptions  PromoRedemption[]
+}
+
+model PromoRedemption {
+  id           String   @id @default(cuid())
+  promoId      String
+  promo        PromoCode @relation(fields: [promoId], references: [id])
+  userId       String
+  createdAt    DateTime @default(now())
+
+  @@unique([promoId, userId])
+}
+
+model ReferralReward {
+  id           String   @id @default(cuid())
+  referrerId   String
+  referredId   String
+  rewardType   String
+  amount       Int
+  status       String   @default("pending") // pending | paid | reversed
+  createdAt    DateTime @default(now())
+}

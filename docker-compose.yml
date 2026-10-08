@@ -1,0 +1,82 @@
+# EggForm — Local Development Services
+#
+# Spin up PostgreSQL + Redis with a single command:
+#   docker compose up -d
+#
+# Then update .env.local:
+#   DATABASE_URL=postgresql://eggform:eggform_pass@localhost:5432/eggform_dev
+#   REDIS_URL=redis://localhost:6379
+#
+# And switch the Prisma schema to PostgreSQL:
+#   cp prisma/schema.postgres.prisma prisma/schema.prisma
+#   bun run db:migrate --name init
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eggform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eggform
+      POSTGRES_PASSWORD: eggform_pass
+      POSTGRES_DB: eggform_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - eggform_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eggform -d eggform_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: eggform-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - eggform_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: Redis Commander (web UI for Redis) — visit http://localhost:8081
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: eggform-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Optional: PgAdmin (web UI for Postgres) — visit http://localhost:8080
+  # Login: admin@eggform.pk / admin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: eggform-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@eggform.pk
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    volumes:
+      - eggform_pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  eggform_postgres_data:
+  eggform_redis_data:
+  eggform_pgadmin_data:

@@ -1,0 +1,42 @@
+# Sensitive uploads (KYC docs)
+uploads/
+
+# Database
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+
+# Build output
+.next/
+out/
+dist/
+
+# Dependencies
+node_modules/
+
+# Environment (NEVER commit)
+.env
+.env.local
+.env.production
+.env.staging
+
+# Logs
+*.log
+dev.log
+server.log
+.zscripts/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+*.pem
+*.key
